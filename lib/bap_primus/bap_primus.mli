@@ -6,7 +6,6 @@ open Bap_future.Std
 open Bap_strings.Std
 
 module Std : sig
-
   (** Primus - The Microexecution Framework.
 
 
@@ -57,6 +56,8 @@ module Std : sig
       it can modify other components (depending on their interface).
 
   *)
+  [@@@warning "-D"]
+
   module Primus : sig
     (** Machine Exception.
 
@@ -850,6 +851,11 @@ module Std : sig
       (** [extract ((x,y),z)] happens after [x] is concatenated with [y]
           and produces [z] as a result.*)
       val concat : ((value * value) * value) observation
+
+      (** [ite ((cond, yes, no), res)] happens after the ite expression
+          that corresponds to ite([cond], [yes], [no]) is evaluated
+          to [res]. *)
+      val ite : ((value * value * value) * value) observation
 
       (** an identifier of a term that will be executed next.   *)
       val enter_term : tid observation

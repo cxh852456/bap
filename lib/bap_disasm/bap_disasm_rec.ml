@@ -175,8 +175,9 @@ type stage1 = {
   base : mem;
   addr : addr;
   visited : Span.t;
+  valid : Addr.Set.t;
   roots : addr list;
-  inits : addr list;
+  inits : Addr.Set.t;
   dests : dests Addr.Table.t;
   errors : (addr * error) list;
   lift : lifter;
@@ -222,6 +223,7 @@ let is_barrier s mem insn =
   has_jump (ok_nil (s.lift mem insn))
 
 let update s mem insn dests : stage1 =
+  let s = {s with valid = Set.add s.valid (Memory.min_addr mem)} in
   if is_barrier s mem insn then
     let dests = List.map dests ~f:(fun d -> match d with
         | Some addr,kind when Memory.contains s.base addr -> d
@@ -253,29 +255,14 @@ let next dis s =
 
 let stop_on = [`Valid]
 
-let relocate brancher lift mem insn =
-  let find_jump dsts =
-    List.find_map dsts ~f:(function
-        | Some addr, `Jump -> Some addr
-        | _ -> None) in
-  let replace_jump bil addr =
-    List.map bil ~f:(function
-        | Bil.Jmp (Bil.Int _) -> Bil.Jmp (Bil.Int addr)
-        | s -> s) in
-  lift mem insn >>= fun bil ->
-  match find_jump (brancher mem insn) with
-  | None -> return bil
-  | Some addr -> return (replace_jump bil addr)
-
 let stage1 ?(rooter=Rooter.empty) lift brancher disasm base =
   let roots =
     Rooter.roots rooter |> Seq.filter ~f:(Memory.contains base) in
   let addr,roots = match Seq.to_list roots with
     | r :: rs -> r,rs
     | [] -> Memory.min_addr base, [] in
-  let lift = relocate brancher lift in
   let init = {base; addr; visited = Span.empty;
-              roots; inits = roots;
+              roots; inits = Addr.Set.of_list roots; valid = Addr.Set.empty;
               dests = Addr.Table.create (); errors = []; lift} in
   Memory.view ~from:addr base >>= fun mem ->
   Dis.run disasm mem ~stop_on ~return ~init
@@ -310,19 +297,20 @@ let create_indexes (dests : dests Addr.Table.t) =
             Addrs.add_multi terms ~key:src ~data:dst));
   leads, terms, succs
 
+let filter_valid s = {s with inits = Set.inter s.inits s.valid}
+
 let stage2 dis stage1 =
+  let stage1 = filter_valid stage1 in
   let leads, terms, kinds = create_indexes stage1.dests in
   let addrs = Addrs.create () in
   let succs = Addrs.create () in
   let preds = Addrs.create () in
-  let inits =
-    List.fold ~init:Addr.Set.empty stage1.inits ~f:Set.add in
   let next = Addr.succ in
   let is_edge addr =
     Addrs.mem leads (next addr) ||
     Addrs.mem kinds addr ||
     Addrs.mem stage1.dests addr ||
-    Addr.Set.mem inits (next addr) in
+    Addr.Set.mem stage1.inits (next addr) in
   let is_visited = Span.mem stage1.visited in
   let next_visited = Span.upper_bound stage1.visited in
   let create_block start finish =

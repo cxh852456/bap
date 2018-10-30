@@ -255,7 +255,7 @@ void exported_symbols(const coff_obj &obj, ogre_doc &s) {
 }
 
 #if LLVM_VERSION_MAJOR == 3 && LLVM_VERSION_MINOR == 8 \
-    || LLVM_VERSION_MAJOR >= 4 && LLVM_VERSION_MAJOR < 7
+    || LLVM_VERSION_MAJOR >= 4 && LLVM_VERSION_MAJOR < 8
 
 error_or<int64_t> symbol_relative_address(const coff_obj &obj, const SymbolRef &sym) {
     auto base = obj.getImageBase();
@@ -322,7 +322,9 @@ error_or<pe32plus_header> get_pe32plus_header(const coff_obj &obj) {
 
 // symbol address for 3.4 is already relative, i.e. doesn't include image base
 error_or<int64_t> symbol_relative_address(const coff_obj &obj, const SymbolRef &sym) {
-    return symbol_address(obj, sym);
+    auto addr = symbol_address(obj, sym);
+    if (!addr) return addr;
+    else return success(int64_t(*addr));
 }
 
 bool is_relocatable(const coff_obj &obj) {

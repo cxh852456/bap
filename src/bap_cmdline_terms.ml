@@ -25,11 +25,12 @@ let logdir : string option Term.t =
 
 let brancher () : string option Term.t =
   match enum_processors (module Brancher) with
-  | [] | [_] -> Term.const None
+  | [] -> Term.const None
+  | [x,_] -> Term.const (Some x)
   | names ->
     let doc = sprintf "Use specified brancher, should be %s" @@
       Arg.doc_alts_enum names in
-    Arg.(value & opt (some (enum names)) None & info ["brancher"] ~doc)
+    Arg.(value & opt (some (enum names)) (Some "internal") & info ["brancher"] ~doc)
 
 let symbolizers () : string list Term.t =
   match enum_processors (module Symbolizer) with
@@ -261,7 +262,7 @@ let recipe_doc = [
 
   `Pre {|
     (parameter depth 128 "maximum depth of analysis")
-    (option analysis-depth $depth)
+    (option analysis-depth \$depth)
    |};
 
   `P "
@@ -298,7 +299,7 @@ let recipe =
 
   The valid representations of a recipe is either the recipe file
   itself (i.e., a file consisting of a list of s-expressions), a
-  directory with a valid $(recipe.scm) file, or zip file, that
+  directory with a valid $(b,recipe.scm) file, or zip file, that
   contains a valid recipe directory. See the $(b,RECIPES) section for
   more information.
 

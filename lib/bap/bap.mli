@@ -7,6 +7,8 @@ open Graphlib.Std
 open Bap_future.Std
 
 module Std : sig
+  [@@@warning "-D"]
+
   (** {2 Overview}
 
       {3 Layered Architecture}
@@ -616,12 +618,11 @@ module Std : sig
     module Make(T : Base) : S with type t = T.t
   end
 
-  (**/**)
+  (** Legacy
+      @deprecated Definitions in this module are deprecated
+   **)
   module Legacy : sig
-    [@@@deprecated "[since 2018-03] Definitions in this module are deprecated"]
     module Monad : sig
-      [@@@deprecated
-        "[since 2018-03] The module is deprecated in favor of new monads library"]
       open Core_kernel.Std
       module type Basic = Monad.Basic
       module type Basic2 = Monad.Basic2
@@ -665,7 +666,10 @@ module Std : sig
         end
       end
     end
+    [@@deprecated
+      "[since 2018-03] The module is deprecated in favor of new monads library"]
   end
+  [@@deprecated "[since 2018-03] Definitions in this module are deprecated"]
 
   (**/**)
 
@@ -2202,6 +2206,21 @@ module Std : sig
         cycle. *)
     val fixpoint : (stmt list -> stmt list) -> (stmt list -> stmt list)
 
+    (** [propagate_consts bil] propagates consts from their reaching definitions.
+        The implementation computes reaching definition using inference style analysis,
+        overapproximates while cycles (doesn't compute the meet-over-paths solution),
+        and ignores memory locations.
+        @since 1.5 *)
+    val propagate_consts : stmt list -> stmt list
+
+    (** [prune_dead_virtuals bil] removes definitions of virtual variables that are
+        not live in the provided [bil] program. We assume that virtual variables are used
+        to represent temporaries, thus their removal is safe. The analysis over-approximates
+        the while loops, and won't remove any definition that occurs in a while loop body,
+        or which depends on it. The analysis doesn't track memory locations.
+        @since 1.5 *)
+    val prune_dead_virtuals : stmt list -> stmt list
+
     (** Maps BIL operators to bitvectors.
         @since 1.3
     *)
@@ -2225,7 +2244,7 @@ module Std : sig
     end
 
     (** Result of a computation.
-        @deprecated  Use the Primus Framework.
+        @deprecated Use the Primus Framework.
     *)
     type result
     [@@deprecated "[since 2018-03] in favor of the Primus Framework"]
@@ -2241,7 +2260,6 @@ module Std : sig
         Bili.
 
         @deprecated  Use the Primus Framework.
-
     *)
     class type storage = object('s)
 
@@ -2253,10 +2271,10 @@ module Std : sig
     end
     [@@deprecated "[since 2018-03] in favor of the Primus Framework"]
 
-    (** Predefined storage classes  *)
+    (** Predefined storage classes
+        @deprecated Use the Primus Framework
+    *)
     module Storage : sig
-      [@@@deprecated "[since 2018-03] in favor of the Primus Framework"]
-      [@@@warning "-D"]
 
       (** linear storage literally implements operational
           semantics, but has O(N) lookup and uses space
@@ -2270,6 +2288,8 @@ module Std : sig
           update method. *)
       class sparse : storage
     end
+    [@@deprecated "[since 2018-03] in favor of the Primus Framework"]
+
 
     (** Value of a result.
         We slightly diverge from an operational semantics by allowing
@@ -2327,8 +2347,6 @@ module Std : sig
         @deprecated  Use the Primus Framework
     *)
     module Result : sig
-      [@@@deprecated "[since 2018-03] in favor of the Primus Framework"]
-      [@@@warning "-D"]
 
       (** result identifier  *)
       type id
@@ -2374,6 +2392,7 @@ module Std : sig
       module Value : Printable.S with type t = value
       include Printable.S with type t := t
     end
+    [@@deprecated "[since 2018-03] in favor of the Primus Framework"]
 
     (** Tries on BIL.
 
@@ -2406,6 +2425,38 @@ module Std : sig
 
       module Normalized : Trie.S with type key = normalized_bil
       include Trie.S with type key = stmt list
+    end
+
+    type pass
+
+    (** [register_pass ~desc name pass] provides a pass to the BIL transformation pipeline.
+        The BIL transformation pipeline is applied after the lifting procedure,
+        i.e., it is embedded into each [lift] function of all Target modules.
+        (You can selectively register passes based on architecture by subscribing
+        to the [Project.Info.arch] variable). All passes that  were in the selection
+        provided to the [select_passes] are applied in the order of the selection
+        until the fixed point is reached or a loop is detected. By default, no passes
+        are selected. The [bil] plugin provides a user interface for passes selection,
+        as well as some useful passes.
+        @since 1.5 *)
+    val register_pass : ?desc:string -> string -> (t -> t) -> pass
+
+    (** [select_passes passes] select the [passes] for the BIL transformation pipeline.
+        See {!register_pass} for more information about the BIL transformation pipeline.
+        @since 1.5
+    *)
+    val select_passes : pass list -> unit
+
+    (** [passes ()] returns all currently registered passes.
+        @since 1.5 *)
+    val passes : unit -> pass list
+
+    (** A BIL analysis pass
+        @since 1.5 *)
+    module Pass : sig
+      (** [name p] returns the name of the given pass. *)
+      val name : pass -> string
+      include Printable.S with type t := pass
     end
   end
 
@@ -2647,8 +2698,6 @@ module Std : sig
       @deprecated  Use the Primus Framework
   *)
   module Context : sig
-    [@@@deprecated "[since 2018-03] in favor of the Primus Framework"]
-    [@@@warning "-D"]
 
     class t : object('s)
 
@@ -2664,7 +2713,7 @@ module Std : sig
           for debugging and introspection.  *)
       method bindings : (var * Bil.result) seq
     end
-  end
+  end [@@deprecated "[since 2018-03] in favor of the Primus Framework"]
 
   module Type_error : module type of Type.Error with type t = Type.Error.t
 
@@ -2815,8 +2864,6 @@ module Std : sig
       @deprecated  Use the Primus Framework
   *)
   module Expi : sig
-    [@@@deprecated "[since 2018-03] in favor of the Primus Framework"]
-    [@@@warning "-D"]
 
     open Bil.Result
     (**
@@ -3017,9 +3064,11 @@ module Std : sig
       with type ('a,'e) state = ('a,'e) M.t
 
     include S with type ('a,'e) state = ('a,'e) Monad.State.t
-  end
+  end [@@deprecated "[since 2018-03] in favor of the Primus Framework"]
 
-  (** Expression {{!Expi}interpreter}  *)
+  (** Expression {{!Expi}interpreter}
+      @deprecated Use the Primus Framework
+  *)
   class ['a] expi : ['a] Expi.t
   [@@deprecated "[since 2018-03] in favor of the Primus Framework"]
 
@@ -3042,10 +3091,10 @@ module Std : sig
       ctxt#bindings |> Seq.to_list;;
       - : (var * Bil.result) list = [(x, [0x1] false)]
     v}
+
+      @deprecated Use the Primus Framework
   *)
   module Bili : sig
-    [@@@deprecated "[since 2018-03] in favor of the Primus Framework"]
-    [@@@warning "-D"]
 
     open Bil.Result
 
@@ -3081,9 +3130,12 @@ module Std : sig
 
     module Make(M : Monad.State.S2) : S with type ('a,'e) state = ('a,'e) M.t
     include S with type ('a,'e) state = ('a,'e) Monad.State.t
-  end
+  end [@@deprecated "[since 2018-03] in favor of the Primus Framework"]
 
-  (** BIL {{!Bili}interpreter} *)
+
+  (** BIL {{!Bili}interpreter}
+      @deprecated Use the Primus Framework
+   *)
   class ['a] bili : ['a] Bili.t
   [@@deprecated "[since 2018-03] in favor of the Primus Framework"]
 
@@ -3413,7 +3465,7 @@ module Std : sig
         wouldn't be applied, consider passing [~ignore:[Eff.reads]]
         if you want such expressions to be reduced.
 
-        - double complement reduction: an even amount of complement
+        - double complement reduction: an odd amount of complement
         operations (one and two) are reduced to one complement of
         the same sort, e.g., [~~~1 -> ~1]
 
@@ -3460,7 +3512,6 @@ module Std : sig
 
     (** [eval x] evaluate expression [x] to a value.  *)
     val eval : t -> Bil.value
-    [@@warning "-D"]
 
     include Regular.S with type t := t
     val pp_adt : t printer
@@ -3653,8 +3704,8 @@ module Std : sig
     *)
     val is_referenced : var -> t -> bool
 
-    (** [normalize ?normalize_exp xs] produces a normalized BIL program
-        with the same[^1] semantics but in the BIL normalized
+    (** [normalize ?normalize_exp xs] produces a normalized BIL
+        program with the same[^1] semantics but in the BIL normalized
         form (BNF). There are two normalized forms, both described
         below. The first form (BNF1) is more readable, the second form
         (BNF2) is more strict, but sometimes yields a code, that is hard
@@ -3665,8 +3716,6 @@ module Std : sig
 
         The BIL First Normalized Form (BNF1) is a subset of the BIL
         language, where expressions have the following properties:
-
-        - No if-then-else expressions.
 
         - Memory load expressions can be only applied to a memory. This
         effectively disallows creation of temporary memory regions,
@@ -3699,7 +3748,6 @@ module Std : sig
        x[a,be]:n => x[a] @ ... @ x[a+n-1]
        m[a,el]:n <- x => (...((m[a] <- x<0>)[a+1] <- x<1>)...)[a+n-1] <- x<n-1>
        m[a,be]:n <- x => (...((m[a] <- x<n-1>)[a+1] <- x<n>)...)[a+n-1] <- x<0>
-       ... ite c ? x : y ... => if c \{ ... x ... } \{ ... y ... }
        (x[a] <- b)[c] => m := x[a] <- b; m[c]
       v}
 
@@ -4333,9 +4381,6 @@ module Std : sig
       @deprecated  Use the Primus Framework.
   *)
   module Biri : sig
-    [@@@deprecated "[since 2018-03] in favor of the Primus Framework"]
-    [@@@warning "-D"]
-
     open Bil.Result
 
     (** Biri evaluates terms in the context of a whole program (since
@@ -4463,10 +4508,14 @@ module Std : sig
       S with type ('a,'e) state = ('a,'e) M.t
 
     include S with type ('a,'e) state = ('a,'e) Monad.State.t
-  end
+  end [@@deprecated "[since 2018-03] in favor of the Primus Framework"]
 
-  (** BIR {{!Biri}interpreter}  *)
+
+  (** BIR {{!Biri}interpreter}
+      @deprecated Use the Primus Framework
+   *)
   class ['a] biri : ['a] Biri.t
+  [@@deprecated "[since 2018-03] in favor of the Primus Framework"]
 
   (** {3 Some predefined tags} *)
 
@@ -5060,10 +5109,11 @@ module Std : sig
 
       This interface must be implemented by a backend plugin, and
       registered with [Image.register] function in order to be
-      accessible for loading images.*)
+      accessible for loading images.
 
+      @deprecated Use new Ogre-powered loader interface
+   *)
   module Backend : sig
-    [@@@deprecated "[since 2017-08] Use new loader Ogre-powered loader interface"]
 
     (** memory access permissions  *)
     type perm = R | W | X | Or of perm * perm
@@ -5112,7 +5162,7 @@ module Std : sig
 
     (** the actual interface to be implemented  *)
     type t = Bigstring.t -> Img.t option
-  end
+  end [@@deprecated "[since 2017-08] Use new Ogre-powered loader interface"]
 
   (** Binary Image.  *)
   module Image : sig
@@ -5287,7 +5337,9 @@ module Std : sig
     val available_backends : unit -> string list
 
     (** [register_backend ~name backend] tries to register [backend] under
-        the specified [name]. *)
+        the specified [name].
+        @deprecated use register_loader instead
+    *)
     val register_backend : name:string -> Backend.t -> [ `Ok | `Duplicate ]
     [@@deprecated "[since 2017-07] use register_loader instead"]
 
@@ -7236,6 +7288,14 @@ module Std : sig
       ?skip:[`phi | `def | `jmp] list -> (** defaults to [[]]  *)
       t -> f:(exp -> exp) -> t
 
+    (** [map_elt ?phi ?def ?jmp blk] applies provided functions to the
+        terms of corresponding classes. All functions default to the
+        identity function. *)
+    val map_elts :
+      ?phi:(phi term -> phi term) ->
+      ?def:(def term -> def term) ->
+      ?jmp:(jmp term -> jmp term) -> blk term -> blk term
+
     (** [substitute ?skip blk x y] substitutes each occurrence of
         expression [x] with expression [y] in block [blk]. The
         substitution is performed deeply. If [skip] parameter is
@@ -7661,10 +7721,12 @@ module Std : sig
       We represent a taint with a term identifier, to designate that a
       taint was produced by a term with the given id. A taint set is
       usually associated with each variable of a given term. This set
-      defines a set of taints with which a variable is tainted.*)
+      defines a set of taints with which a variable is tainted.
+
+      @deprecated use the Bap Taint Framework
+  *)
   module Taint : sig
-    [@@@deprecated "[since 2018-03] use the Bap Taint Framework instead"]
-    [@@@warning "-D"]
+
     type t = tid
 
     type set = Tid.Set.t [@@deriving bin_io, compare, sexp]
@@ -7791,7 +7853,7 @@ module Std : sig
     val pp_map : map printer
 
     module Map : Regular.S with type t = map
-  end
+  end [@@deprecated "[since 2018-03] use the Bap Taint Framework instead"]
 
   type 'a source = 'a Source.t
 
@@ -7894,20 +7956,17 @@ module Std : sig
     (** [create f] creates a reconstructor from a given function [f]  *)
     val create : (cfg -> symtab) -> t
 
-    (** [default name roots] builds a reconstructor from given a
+    (** [default name roots] builds a reconstructor from a given
         function, that maps addresses to function names (see
         {!Symbolizer}) and a list of known function starts. The
-        reconstructor will extend the list of function start with
-        destinations of call instructions found in the CFG, and then
-        for each function start build a function using the following
-        definition of a function:
+        reconstructor will extend the list of function starts with
+        destinations of call instructions found in the CFG. Also,
+        the reconstructor treats every node without input edges as
+        a function start. For each function start builds a function
+        using the following definition of a function:
 
          Function is built from the entry block and every block that
-         is reachable from it without using calls, if the block
-         address is greater than the entry block address and less
-         than the address of entry block of the next symbol.
-
-        Note: this is an approximation, that works fine for most cases.  *)
+         is reachable from it without using calls. *)
     val default : (word -> string) -> word list -> t
 
 

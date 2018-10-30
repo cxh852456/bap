@@ -19,51 +19,95 @@ type reconstructor = t
 let create f = Reconstructor f
 let run (Reconstructor f) = f
 
-let find_calls name roots cfg =
-  let starts = Addr.Table.create () in
-  List.iter roots ~f:(fun addr ->
-      Hashtbl.set starts ~key:addr ~data:(name addr));
-  Cfg.nodes cfg |> Seq.iter ~f:(fun blk ->
-      let () =
-        if Seq.is_empty (Cfg.Node.inputs blk cfg) then
-          let addr = Block.addr blk in
-          Hashtbl.set starts ~key:addr ~data:(name addr) in
-      let term = Block.terminator blk in
-      if Insn.(is call) term then
-        Seq.iter (Cfg.Node.outputs blk cfg)
-          ~f:(fun e ->
-              if Cfg.Edge.label e <> `Fall then
-                let w = Block.addr (Cfg.Edge.dst e) in
-                Hashtbl.set starts ~key:w ~data:(name w)));
-  starts
+(* [is_start roots cfg blk] returns true if [blk] is a function start.
 
-let reconstruct name roots cfg =
-  let roots = find_calls name roots cfg in
-  let init =
-    Cfg.nodes cfg |> Seq.fold ~init:Cfg.empty ~f:(fun cfg n ->
-        Cfg.Node.insert n cfg) in
-  let filtered =
-    Cfg.edges cfg |> Seq.fold ~init ~f:(fun cfg e ->
-        if Hashtbl.mem roots (Block.addr (Cfg.Edge.dst e)) then cfg
-        else Cfg.Edge.insert e cfg) in
-  let find_block addr =
-    Cfg.nodes cfg |> Seq.find ~f:(fun blk ->
-        Addr.equal addr (Block.addr blk)) in
-  Hashtbl.fold roots ~init:Symtab.empty
-    ~f:(fun ~key:entry ~data:name syms ->
-        match find_block entry with
-        | None -> syms
-        | Some entry ->
-          let cfg : cfg =
-            with_return (fun {return} ->
-                Graphlib.depth_first_search (module Cfg)
-                  filtered ~start:entry ~init:Cfg.empty
-                  ~enter_edge:(fun _ -> Cfg.Edge.insert)
-                  ~start_tree:(fun n t ->
-                      if Block.equal n entry
-                      then Cfg.Node.insert n t
-                      else return t)) in
-          Symtab.add_symbol syms (name,entry,cfg))
+   A block is considered to be a function start if one of the
+   following is true:
+   - the block address belongs to the provided set of roots;
+   - the block has no incoming edges
+
+   In general, all blocks should be reachable from the set of roots,
+   thus a block without incoming edges should belong to the set of
+   roots, so it might be tempting to say that the second clause is
+   redundant.
+
+   However, our implementation of the recursive descent disassembler
+   can generate blocks that are not reachable from the initial set of
+   roots. This can happen only if the set of roots is empty, which is
+   treated as a special case, that instructs the disassembler to treat
+   the first byte of the provided input as a root.
+
+   Beyond being a questionable design decision, this behavior is
+   actually just an example of a more general problem. The
+   reconstructor and disassemblers could be called with different sets
+   of roots. So, in general, we can't rely on the set of roots passed
+   to the reconstructor for functions start classification.*)
+let is_start roots cfg blk =
+  Set.mem roots (Block.addr blk) ||
+  Cfg.Node.degree ~dir:`In blk cfg = 0
+
+let is_fall e = Cfg.Edge.label e = `Fall
+let is_call b = Insn.(is call) (Block.terminator b)
+
+let entries_of_block cfg roots blk =
+  let entries =
+    if is_start roots cfg blk then Block.Set.singleton blk
+    else Block.Set.empty in
+  if is_call blk then
+    Seq.fold ~init:entries (Cfg.Node.outputs blk cfg)
+      ~f:(fun entries e ->
+          if is_fall e then entries
+          else Set.add entries (Cfg.Edge.dst e))
+  else entries
+
+let terminator_addr blk =
+  List.rev (Block.insns blk) |>
+  List.hd_exn |>
+  fst |>
+  Memory.min_addr
+
+let is_unresolved blk cfg =
+  let deg = Cfg.Node.degree ~dir:`Out blk cfg in
+  deg = 0 ||
+  (deg = 1 && is_fall (Seq.hd_exn (Cfg.Node.outputs blk cfg)))
+
+let add_callnames syms name cfg blk =
+  if is_call blk then
+    let call_addr = terminator_addr blk in
+    if is_unresolved blk cfg then
+      Symtab.add_call_name syms blk (name call_addr)
+    else
+      Seq.fold ~init:syms (Cfg.Node.outputs blk cfg)
+        ~f:(fun syms e ->
+            if is_fall e then syms
+            else
+              Cfg.Edge.dst e |> Block.addr |> name |>
+              Symtab.add_call_name syms blk)
+  else syms
+
+let collect name cfg roots =
+  Seq.fold (Cfg.nodes cfg) ~init:(Block.Set.empty, Symtab.empty)
+    ~f:(fun (entries,syms) blk ->
+        Set.union entries (entries_of_block cfg roots blk),
+        add_callnames syms name cfg blk)
+
+let reconstruct name roots prog =
+  let roots = Addr.Set.of_list roots in
+  let entries,syms = collect name prog roots in
+  let is_call e = Set.mem entries (Cfg.Edge.dst e) in
+  let rec add cfg node =
+    let cfg = Cfg.Node.insert node cfg in
+    Seq.fold (Cfg.Node.outputs node prog) ~init:cfg
+      ~f:(fun cfg edge ->
+          if is_call edge then cfg
+          else
+            let cfg' = Cfg.Edge.insert edge cfg in
+            if Cfg.Node.mem (Cfg.Edge.dst edge) cfg then cfg'
+            else add cfg' (Cfg.Edge.dst edge)) in
+  Set.fold entries ~init:syms ~f:(fun syms entry ->
+      let name = name (Block.addr entry) in
+      let cfg = add Cfg.empty entry in
+      Symtab.add_symbol syms (name,entry,cfg))
 
 let of_blocks syms =
   let reconstruct (cfg : cfg) =
